@@ -27,6 +27,12 @@ model = models.vgg19(pretrained=True)
 # Remove linear and pool layers (since we're not doing classification)
 modules = list(model.children())[:-2]
 model = nn.Sequential(*modules)
+modules = list(model.children())[0]
+model = nn.Sequential(*modules)
+modules = list(model.children())[:1]
+model = nn.Sequential(*modules)
+print("===================== MODEL ARCHITECTURE =====================")
+print(model)
 model.to('cuda')
 # print(model)
 # print(model(image.unsqueeze(0)).shape)
