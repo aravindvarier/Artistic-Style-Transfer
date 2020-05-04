@@ -53,7 +53,7 @@ class My_VGG19(nn.Module):
         
 
 transform = transforms.Compose([
-                transforms.Resize((224,224)),
+                transforms.Resize((300,300)),
                 # transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -64,7 +64,7 @@ content_image = Image.open(content_img_name)
 content_image = transform(content_image)
 content_image = content_image.to('cuda')
 
-style_img_name = 'persistenceofmemory.jpg'
+style_img_name = 'thestarrynight.jpg'
 style_img_name = os.path.join(img_dir, style_img_name)
 style_image = Image.open(style_img_name)
 style_image = transform(style_image)
@@ -76,12 +76,12 @@ print("===================== MODEL ARCHITECTURE =====================")
 print(model)
 input("Press Return to continue or Ctrl-C to exit")
 model.to('cuda')
-x = torch.randn(1,3,224,224,device='cuda',requires_grad=True)
+x = torch.randn(1,3,300,300,device='cuda',requires_grad=True)
 
 max_epochs = 10000
-print_freq = 10
+print_freq = 100
 save_freq = 500
-acceptable_diff = 50
+acceptable_diff = 5
 
 optimizer = torch.optim.Adam([x], lr=0.001)
 inv_normalize = transforms.Normalize(
@@ -96,7 +96,9 @@ x_prev = copy.deepcopy(x)
 
 content_parts = 4
 style_parts = 4
-sizes = [] #Used to store the size of the feature maps of the intermediate outputs at each stage
+alpha = 1
+beta = 100
+sizes = [] #Used to store the size of feature maps of intermediate outputs at each stage
 
 while True:
     optimizer.zero_grad()
@@ -112,6 +114,7 @@ while True:
         target_style_output[i] = torch.flatten(target_style_output[i].squeeze(0), 1, 2)
         target_style_output[i] = torch.matmul(target_style_output[i], target_style_output[i].T)  #Gram matrix construction
 
+    #CONTENT LOSS CALCULATION
     content_loss = 0.5 * torch.sum((content_image_output - target_content_output)**2)
 
     #STYLE LOSS CALCULATION
@@ -119,10 +122,13 @@ while True:
     for i in range(len(target_style_output)):
         style_loss += (1/(sizes[i]**2 * target_style_output[i].shape[-1]**2))*torch.sum((target_style_output[i] - style_image_output[i])**2)
 
+    #Combined Loss
+    loss = alpha * content_loss + beta * style_loss
+
 
     if epoch % print_freq == 0:
-        print("Epoch: ", epoch, " Loss: ", style_loss.item())
-    style_loss.backward()
+        print("Epoch: ", epoch, " Loss: ", loss.item())
+    loss.backward()
     optimizer.step()
 
     if epoch % save_freq == 0:
