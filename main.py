@@ -7,8 +7,10 @@ from PIL import Image
 import os
 import copy
 from collections import OrderedDict
+import argparse
 
-img_dir = './images'
+content_img_dir = './images/content_images'
+style_img_dir = './images/style_images'
 image_save_folder = './image_saves'
 if not os.path.isdir(image_save_folder):
     os.mkdir(image_save_folder)
@@ -48,27 +50,44 @@ class My_VGG19(nn.Module):
         return y, style_outputs
 
         
-        
 
-        
+
+
+parser = argparse.ArgumentParser(description='Training Script for Artistic Style Transfer')
+parser.add_argument('--lr', type=float, help='learning rate', default=0.001)
+parser.add_argument('--content-image', type=str, default='shruti.jpg')
+parser.add_argument('--style-image', type=str, default='thestarrynight.jpg')
+parser.add_argument('--alpha', type=int, default=1)
+parser.add_argument('--beta', type=int, default=1000)
+
+
+args = parser.parse_args()
+
+
+content_img_name = args.content_image
+content_img_name_ = os.path.join(content_img_dir, content_img_name)
+content_image = Image.open(content_img_name_)
+width, height = content_image.size
 
 transform = transforms.Compose([
-                transforms.Resize((300,300)),
+                transforms.Resize((300,300*width//height)),
                 # transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                 ])
-content_img_name = 'neckarfront.jpg'
-content_img_name = os.path.join(img_dir, content_img_name)
-content_image = Image.open(content_img_name)
+
 content_image = transform(content_image)
 content_image = content_image.to('cuda')
 
-style_img_name = 'thestarrynight.jpg'
-style_img_name = os.path.join(img_dir, style_img_name)
-style_image = Image.open(style_img_name)
+style_img_name = args.style_image
+style_img_name_ = os.path.join(style_img_dir, style_img_name)
+style_image = Image.open(style_img_name_)
 style_image = transform(style_image)
 style_image = style_image.to('cuda')
+
+image_save_folder = os.path.join(image_save_folder, content_img_name.split('.')[0]+"_"+style_img_name.split('.')[0] )
+if not os.path.isdir(image_save_folder):
+    os.mkdir(image_save_folder)
 
 
 model = My_VGG19()
@@ -76,7 +95,7 @@ print("===================== MODEL ARCHITECTURE =====================")
 print(model)
 input("Press Return to continue or Ctrl-C to exit")
 model.to('cuda')
-x = torch.randn(1,3,300,300,device='cuda',requires_grad=True)
+x = torch.randn(1,3,300,211,device='cuda',requires_grad=True)
 
 max_epochs = 10000
 print_freq = 100
@@ -95,9 +114,9 @@ epoch = 1
 x_prev = copy.deepcopy(x)
 
 content_parts = 4
-style_parts = 4
+style_parts = 5
 alpha = 1
-beta = 100
+beta = 1000
 sizes = [] #Used to store the size of feature maps of intermediate outputs at each stage
 
 while True:
@@ -123,7 +142,7 @@ while True:
         style_loss += (1/(sizes[i]**2 * target_style_output[i].shape[-1]**2))*torch.sum((target_style_output[i] - style_image_output[i])**2)
 
     #Combined Loss
-    loss = alpha * content_loss + beta * style_loss
+    loss = args.alpha * content_loss + args.beta * style_loss
 
 
     if epoch % print_freq == 0:
@@ -143,6 +162,5 @@ while True:
             x_prev = copy.deepcopy(x)
 
     epoch += 1
-
 
 
