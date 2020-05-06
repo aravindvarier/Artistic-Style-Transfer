@@ -6,7 +6,6 @@ from torchvision.utils import save_image
 from PIL import Image
 import os
 import copy
-from collections import OrderedDict
 import argparse
 
 content_img_dir = './images/content_images'
@@ -59,6 +58,9 @@ parser.add_argument('--content-image', type=str, default='shruti.jpg')
 parser.add_argument('--style-image', type=str, default='thestarrynight.jpg')
 parser.add_argument('--alpha', type=int, default=1)
 parser.add_argument('--beta', type=int, default=1000)
+parser.add_argument('--acceptable-diff', type=int, default=5)
+parser.add_argument('--save-freq', type=int, default=500)
+parser.add_argument('--print-freq', type=int, default=100)
 
 
 args = parser.parse_args()
@@ -91,18 +93,20 @@ if not os.path.isdir(image_save_folder):
 
 
 model = My_VGG19()
+for param in model.parameters():
+    param.requires_grad_(False)
 print("===================== MODEL ARCHITECTURE =====================")
 print(model)
 input("Press Return to continue or Ctrl-C to exit")
 model.to('cuda')
-x = torch.randn(1,3,300,211,device='cuda',requires_grad=True)
+x = torch.randn(1,3,300,300*width//height,device='cuda',requires_grad=True)
 
 max_epochs = 10000
-print_freq = 100
-save_freq = 500
-acceptable_diff = 5
+print_freq = args.print_freq
+save_freq = args.save_freq
+acceptable_diff = args.acceptable_diff
 
-optimizer = torch.optim.Adam([x], lr=0.001)
+optimizer = torch.optim.Adam([x], lr=args.lr)
 inv_normalize = transforms.Normalize(
         mean=[-0.485/0.229, -0.456/0.224, -0.406/0.255],
         std=[1/0.229, 1/0.224, 1/0.255]
@@ -115,30 +119,26 @@ x_prev = copy.deepcopy(x)
 
 content_parts = 4
 style_parts = 5
-alpha = 1
-beta = 1000
+
 sizes = [] #Used to store the size of feature maps of intermediate outputs at each stage
 
 while True:
     optimizer.zero_grad()
     content_image_output, _ = model(content_image.unsqueeze(0), content_parts, 0)    
     _, style_image_output = model(style_image.unsqueeze(0), 0, style_parts)
-    for i in range(len(style_image_output)):
-        sizes.append(style_image_output[i].shape[-1])
-        style_image_output[i] = torch.flatten(style_image_output[i].squeeze(0), 1, 2)
-        style_image_output[i] = torch.matmul(style_image_output[i], style_image_output[i].T)  #Gram matrix construction
-
     target_content_output, target_style_output = model(x, content_parts, style_parts)
-    for i in range(len(target_style_output)):
-        target_style_output[i] = torch.flatten(target_style_output[i].squeeze(0), 1, 2)
-        target_style_output[i] = torch.matmul(target_style_output[i], target_style_output[i].T)  #Gram matrix construction
 
     #CONTENT LOSS CALCULATION
     content_loss = 0.5 * torch.sum((content_image_output - target_content_output)**2)
 
     #STYLE LOSS CALCULATION
     style_loss = 0
-    for i in range(len(target_style_output)):
+    for i in range(len(style_image_output)):
+        sizes.append(style_image_output[i].shape[-1])
+        style_image_output[i] = torch.flatten(style_image_output[i].squeeze(0), 1, 2)
+        style_image_output[i] = torch.matmul(style_image_output[i], style_image_output[i].T)  #Gram matrix construction
+        target_style_output[i] = torch.flatten(target_style_output[i].squeeze(0), 1, 2)
+        target_style_output[i] = torch.matmul(target_style_output[i], target_style_output[i].T)  #Gram matrix construction
         style_loss += (1/(sizes[i]**2 * target_style_output[i].shape[-1]**2))*torch.sum((target_style_output[i] - style_image_output[i])**2)
 
     #Combined Loss
@@ -152,13 +152,13 @@ while True:
 
     if epoch % save_freq == 0:
         with torch.no_grad():
+            inverted = inv_normalize(x[0])
+            save_image(inverted, os.path.join(image_save_folder, str(epoch)+".jpg"))
             diff = torch.sum((x_prev - x)**2).item()
             print("Difference from previous stored image: ", diff)
             if diff < acceptable_diff:
                 print("The difference between images is now too low. Exiting.")
                 break
-            inverted = inv_normalize(x[0])
-            save_image(inverted, os.path.join(image_save_folder, str(epoch)+".jpg"))
             x_prev = copy.deepcopy(x)
 
     epoch += 1
